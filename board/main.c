@@ -67,6 +67,13 @@ void set_safety_mode(uint16_t mode, uint16_t param) {
       }
       can_silent = false;
       break;
+    case SAFETY_MAZDA:
+      set_intercept_relay(true, false);
+      heartbeat_counter = 0U;
+      heartbeat_lost = false;
+      current_board->set_can_mode(GET_FLAG(param, MAZDA_PARAM_TI) ? CAN_MODE_OBD_CAN2 : CAN_MODE_NORMAL);
+      can_silent = false;
+      break;
     default:
       set_intercept_relay(true, false);
       heartbeat_counter = 0U;
