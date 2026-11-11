@@ -27,6 +27,12 @@
 
 // ****************************** safety mode ******************************
 
+// Mazda's Torque Interceptor is sent a frame on bus 1 every 10 ms, engaged or not. With nothing
+// there to acknowledge them (its cable open, CAN2 moved off the OBD-II pins) they queue, and one
+// TX queue short of room stops the host writing to all three buses. More than this many waiting
+// are dropped: idle requests, already older than the interceptor's own 100 ms timeout.
+#define MAZDA_TI_TX_BACKLOG_MAX 50U
+
 // this is the only way to leave silent mode
 void set_safety_mode(uint16_t mode, uint16_t param) {
   uint16_t mode_copy = mode;
@@ -136,6 +142,12 @@ static void tick_handler(void) {
     harness_tick();
     simple_watchdog_kick();
     sound_tick();
+
+    // keep a Torque Interceptor side channel that nothing acknowledges from holding up the other buses
+    if ((current_safety_mode == SAFETY_MAZDA) && GET_FLAG(current_safety_param, MAZDA_PARAM_TI) &&
+        ((CAN_TX_BUFFER_SIZE - 1U - can_slots_empty(can_queues[1])) > MAZDA_TI_TX_BACKLOG_MAX)) {
+      can_clear(can_queues[1]);
+    }
 
     if (relay_malfunction_prev != relay_malfunction) {
       if (relay_malfunction) {
