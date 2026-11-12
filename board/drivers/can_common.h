@@ -102,6 +102,22 @@ void can_clear(can_ring *q) {
   refresh_can_tx_slots_available();
 }
 
+// Drop a bus's TX queue once more than max frames wait in it. For a bus that may have nothing
+// on it to acknowledge what is sent: one queue short of room stops the host writing to all of
+// them (can_tx_check_min_slots_free).
+bool can_tx_limit_backlog(uint8_t bus_number, uint32_t max) {
+  bool cleared = false;
+  if (bus_number < PANDA_CAN_CNT) {
+    can_ring *q = can_queues[bus_number];
+    uint32_t waiting = q->fifo_size - 1U - can_slots_empty(q);
+    if (waiting > max) {
+      can_clear(q);
+      cleared = true;
+    }
+  }
+  return cleared;
+}
+
 // assign CAN numbering
 // bus num: CAN Bus numbers in panda, sent to/from USB
 //    Min: 0; Max: 127; Bit 7 marks message as receipt (bus 129 is receipt for but 1)

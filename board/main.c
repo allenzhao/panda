@@ -144,9 +144,8 @@ static void tick_handler(void) {
     sound_tick();
 
     // keep a Torque Interceptor side channel that nothing acknowledges from holding up the other buses
-    if ((current_safety_mode == SAFETY_MAZDA) && GET_FLAG(current_safety_param, MAZDA_PARAM_TI) &&
-        ((CAN_TX_BUFFER_SIZE - 1U - can_slots_empty(can_queues[1])) > MAZDA_TI_TX_BACKLOG_MAX)) {
-      can_clear(can_queues[1]);
+    if ((current_safety_mode == SAFETY_MAZDA) && GET_FLAG(current_safety_param, MAZDA_PARAM_TI)) {
+      (void)can_tx_limit_backlog(1U, MAZDA_TI_TX_BACKLOG_MAX);
     }
 
     if (relay_malfunction_prev != relay_malfunction) {

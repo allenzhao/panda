@@ -103,6 +103,54 @@ class TestPandaComms(unittest.TestCase):
       assert m == test_msg, "message buffer should contain valid test messages"
 
 
+  def test_tx_limit_backlog(self):
+    # A bus with nothing on it to acknowledge frames (Mazda's Torque Interceptor side channel
+    # with its cable open): its queue only grows, and once it is short of room for one bulk
+    # transfer the host can write to no bus at all. The tick drops a queue past a limit.
+    spi_room = 170  # MAX_CAN_MSGS_PER_SPI_BULK_TRANSFER
+    limit = 50
+    idle = libpanda_py.make_CANPacket(0x249, 1, bytes.fromhex("08000800c461ce60"))
+    pkt = libpanda_py.CANPacket()
+
+    def queued(bus):
+      return TX_QUEUES[bus].contents.fifo_size - 1 - lpp.can_slots_empty(TX_QUEUES[bus])
+
+    def drain():
+      for q in TX_QUEUES:
+        while lpp.can_pop(q, pkt):
+          pass
+
+    for waiting, cleared in ((0, False), (limit, False), (limit + 1, True), (300, True)):
+      with self.subTest(waiting=waiting):
+        drain()
+        for _ in range(waiting):
+          assert lpp.can_push(TX_QUEUES[1], idle)
+        # frames for the other buses are never touched
+        other = libpanda_py.make_CANPacket(0x243, 0, bytes(8))
+        assert lpp.can_push(TX_QUEUES[0], other) and lpp.can_push(TX_QUEUES[2], other)
+        blocked = not lpp.can_tx_check_min_slots_free(spi_room)
+        self.assertEqual(blocked, waiting == 300)
+        self.assertEqual(lpp.can_tx_limit_backlog(1, limit), cleared)
+        self.assertEqual(queued(1), 0 if cleared else waiting)
+        self.assertEqual((queued(0), queued(2)), (1, 1))
+        self.assertTrue(lpp.can_tx_check_min_slots_free(spi_room))
+
+    # a queue that wrapped is counted the same
+    drain()
+    for _ in range(400):
+      lpp.can_push(TX_QUEUES[1], idle)
+    for _ in range(380):
+      lpp.can_pop(TX_QUEUES[1], pkt)
+    for _ in range(40):
+      lpp.can_push(TX_QUEUES[1], idle)
+    self.assertEqual(queued(1), 60)
+    self.assertTrue(lpp.can_tx_limit_backlog(1, limit))
+    self.assertEqual(queued(1), 0)
+
+    # no such bus: nothing to clear
+    self.assertFalse(lpp.can_tx_limit_backlog(3, 0))
+    drain()
+
   def test_can_send_usb(self):
     for bus in range(3):
       with self.subTest(bus=bus):
